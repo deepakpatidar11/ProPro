@@ -1,0 +1,1102 @@
+
+-----------------------------------------------------------------------------------------------------------------
+-- Profile Completeness Query
+-----------------------------------------------------------------------------------------------------------------
+--select avg(completeness) from
+select count(completeness) from
+(
+select e.sso "SSO", e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", e.emp_reporting_ifg "BUSINESS",
+(
+case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+case when eh2.historycount >= 1 THEN 1 when e.emp_ge_service_years < 3 THEN 1 else 0 end  +
+case when eh2.historycharcount >= 10 THEN 1 when e.emp_ge_service_years < 3 THEN 1 else 0 end +
+case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+case when edu.edu_count >= 1 THEN 1 else 0 end +
+case when lang.language_count >= 1 THEN 1 else 0 end +
+case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+case when nw.network_count >= 1 THEN 1 else 0 end
+) / 10 as COMPLETENESS
+from t_employee e
+left join t_employee_resume er on (e.sso = er.sso)
+left join t_employee_history eh on (e.sso = eh.sso and eh.curr_job_flag = 'Y')
+left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (e.sso = edu.sso)
+left join (
+select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+group by sso
+) eh2 on (e.sso = eh2.sso)
+left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (e.sso = lang.sso)
+left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (e.sso = nw.sso)
+--where e.sso = '212361328' and rownum = 1
+)
+where completeness > 0.5
+;
+--46130 (24-JAN-2017)
+--45421 
+--45278
+--45109
+--44525
+--44336
+--43989
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- Profile Completeness AGGREGATED by BUSINESS query
+-----------------------------------------------------------------------------------------------------------------
+select business, ROUND(AVG(completeness)*100,2)
+FROM
+(
+select e.sso "SSO", e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", e.emp_reporting_ifg "BUSINESS",
+(
+case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+case when eh2.historycount >= 1 THEN 1 when e.emp_ge_service_years < 3 THEN 1 else 0 end  +
+case when eh2.historycharcount >= 10 THEN 1 when e.emp_ge_service_years < 3 THEN 1 else 0 end +
+case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+case when edu.edu_count >= 1 THEN 1 else 0 end +
+case when lang.language_count >= 1 THEN 1 else 0 end +
+case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+case when nw.network_count >= 1 THEN 1 else 0 end
+) / 10 as COMPLETENESS
+from t_employee e
+left join t_employee_resume er on (e.sso = er.sso)
+left join t_employee_history eh on (e.sso = eh.sso and eh.curr_job_flag = 'Y')
+left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (e.sso = edu.sso)
+left join (
+select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+group by sso
+) eh2 on (e.sso = eh2.sso)
+left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (e.sso = lang.sso)
+left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (e.sso = nw.sso)
+) 
+GROUP by BUSINESS
+ORDER BY BUSINESS ASC
+--where e.sso = '212361328' and rownum = 1
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- COUNT and AVERAGE Sharing Levels and Total Shareable Sections
+-----------------------------------------------------------------------------------------------------------------
+--COUNT
+select count(pcnt_shared) from
+(
+SELECT SHARES.SSO, e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", e.emp_reporting_ifg "BUSINESS",
+SHARES.SHARING_SCORE SHARED_OTHER, 10 TOTAL_OTHER, SHARES.TRC SHARED_TRAININGS, NVL(SHAREABLE.TOTAL_SHAREABLE, 0) TOTAL_TRAININGS
+, ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED
+FROM
+(
+  select tos.sso SSO, 
+  DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+  -- + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+  AS SHARING_SCORE,
+  NVL(tost.trcount, 0) TRC
+  from t_optin_sharing tos
+  left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+) SHARES,
+(
+  select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+  from
+  (
+  select sso, count(trcat_program_Type) trtypes from
+    (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+    group by sso
+    ) trngs,
+    (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+  where trngs.sso = tcerts.sso(+)
+) SHAREABLE,
+T_EMPLOYEE E
+WHERE E.SSO = SHARES.SSO
+AND SHARES.SSO = SHAREABLE.SSO(+)
+--AND SHARES.SSO = '212361328'
+)
+where pcnt_shared > 0
+;
+
+--AVERAGE
+select avg(pcnt_shared) from
+(
+SELECT SHARES.SSO, e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", e.emp_reporting_ifg "BUSINESS",
+SHARES.SHARING_SCORE SHARED_OTHER, 10 TOTAL_OTHER, SHARES.TRC SHARED_TRAININGS, NVL(SHAREABLE.TOTAL_SHAREABLE, 0) TOTAL_TRAININGS
+, ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED
+FROM
+(
+  select tos.sso SSO, 
+  DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+  -- + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+  AS SHARING_SCORE,
+  NVL(tost.trcount, 0) TRC
+  from t_optin_sharing tos
+  left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+) SHARES,
+(
+  select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+  from
+  (
+  select sso, count(trcat_program_Type) trtypes from
+    (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+    group by sso
+    ) trngs,
+    (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+  where trngs.sso = tcerts.sso(+)
+) SHAREABLE,
+T_EMPLOYEE E
+WHERE E.SSO = SHARES.SSO
+AND SHARES.SSO = SHAREABLE.SSO(+)
+--AND SHARES.SSO = '212361328'
+)
+;
+
+
+
+select count(*)
+from
+(
+select tos.sso,
+DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)  
++ DECODE (tos.education, NULL, 0, 'N', 0, 1)
++ DECODE (tos.training, NULL, 0, 'N', 0, 1) as SHARING_SCORE
+from t_optin_sharing tos
+--where (emp_history = 'Y' or education = 'Y' or training = 'Y')
+)
+where sharing_score > 0
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- Sharing Levels AGGREGATED by BUSINESS query
+-----------------------------------------------------------------------------------------------------------------
+SELECT BUSINESS, ROUND(AVG(PCNT_SHARED)*100,2)
+FROM
+(
+SELECT SHARES.SSO, e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", e.emp_reporting_ifg "BUSINESS",
+ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED
+FROM
+(
+  select tos.sso SSO, 
+  DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+  -- + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+  + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+  AS SHARING_SCORE,
+  NVL(tost.trcount, 0) TRC
+  from t_optin_sharing tos
+  left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+) SHARES,
+(
+  select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+  from
+  (
+  select sso, count(trcat_program_Type) trtypes from
+    (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+    group by sso
+    ) trngs,
+    (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+  where trngs.sso = tcerts.sso(+)
+) SHAREABLE,
+T_EMPLOYEE E
+WHERE E.SSO = SHARES.SSO
+AND SHARES.SSO = SHAREABLE.SSO(+)
+--AND SHARES.SSO = '212361328'
+)
+GROUP BY BUSINESS
+ORDER BY BUSINESS ASC
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- Counts of EEs Sharing by Business across the Different Shareable Sections
+-----------------------------------------------------------------------------------------------------------------
+SELECT BUSINESS, COUNT(SSO), ROUND(AVG(PCNT_SHARED)*100,2),
+SUM (SH_EH), SUM(SH_CA), SUM(SH_WM), SUM(SH_IP), SUM(SH_CS), SUM(SH_LP), SUM(SH_ED), SUM(SH_TR), SUM(SH_ON), SUM(SH_PI), SUM(SH_EG),
+ROUND(AVG(completeness)*100,2), SUM(CM01), SUM(CM02), SUM(CM03), SUM(CM04), SUM(CM05), SUM(CM06), SUM(CM07), SUM(CM08), SUM(CM09), SUM(CM10)
+FROM
+(
+    SELECT SHARES.SSO, e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", e.emp_reporting_ifg "BUSINESS",
+    ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED,
+    shares.sh_eh, shares.sh_ca, shares.sh_wm, shares.sh_ip, shares.sh_cs, shares.sh_lp, shares.sh_ed, shares.sh_tr, shares.sh_on, shares.sh_pi, shares.sh_eg,
+    completes.completeness, completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05,
+    completes.cm06, completes.cm07, completes.cm08, completes.cm09, completes.cm10
+    FROM
+    (
+      select tos.sso SSO, 
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1) sh_eh,
+      DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1) sh_ca,
+      DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1) sh_wm,
+      DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1) sh_ip,
+      DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1) sh_cs,
+      DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1) sh_lp,
+      DECODE (tos.education, NULL, 0, 'N', 0, 1) sh_ed,
+      DECODE (tos.training, NULL, 0, 'N', 0, 1) sh_tr,
+      DECODE (tos.online_networks, NULL, 0, 'N', 0, 1) sh_on,
+      DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1) sh_pi,
+      DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1) sh_eg,
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+      -- + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+      AS SHARING_SCORE,
+      NVL(tost.trcount, 0) TRC
+      from t_optin_sharing tos
+      left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+    ) SHARES,
+    (
+      select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+      from
+      (
+      select sso, count(trcat_program_Type) trtypes from
+        (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+        group by sso
+        ) trngs,
+        (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+      where trngs.sso = tcerts.sso(+)
+    ) SHAREABLE,
+    (
+      select ee.sso "SSO", 
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end as cm01,
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end as cm06,
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end as cm02,
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm03,
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm04,
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end as cm05,
+      case when edu.edu_count >= 1 THEN 1 else 0 end as cm07,
+      case when lang.language_count >= 1 THEN 1 else 0 end as cm08,
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end as cm09,
+      case when nw.network_count >= 1 THEN 1 else 0 end as cm10,
+      (
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end  +
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end +
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+      case when edu.edu_count >= 1 THEN 1 else 0 end +
+      case when lang.language_count >= 1 THEN 1 else 0 end +
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+      case when nw.network_count >= 1 THEN 1 else 0 end
+      ) / 10 as COMPLETENESS
+      from t_employee ee
+      left join t_employee_resume er on (ee.sso = er.sso)
+      left join t_employee_history eh on (ee.sso = eh.sso and eh.curr_job_flag = 'Y')
+      left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (ee.sso = edu.sso)
+      left join (
+      select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+      and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+      group by sso
+      ) eh2 on (ee.sso = eh2.sso)
+      left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (ee.sso = lang.sso)
+      left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (ee.sso = nw.sso)
+    ) COMPLETES,
+    T_EMPLOYEE E
+    WHERE E.SSO = SHARES.SSO
+    AND E.SSO = COMPLETES.SSO
+    AND SHARES.SSO = SHAREABLE.SSO(+)
+    --AND SHARES.SSO = '212361328'
+)
+GROUP BY BUSINESS
+ORDER BY BUSINESS ASC
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- RAW DATA FOR THE ABOVE QUERY - To get the sharing and completeness data for all EEs
+-----------------------------------------------------------------------------------------------------------------
+
+    SELECT rownum, 
+    SHARES.SSO, 
+    e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", 
+    thp.IFG "BUSINESS", 
+    thp.REGION, thp.BAND, thp.Ffunction "Function",
+    ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED,
+    shares.sh_eh, shares.sh_ca, shares.sh_wm, shares.sh_ip, shares.sh_cs, shares.sh_lp, shares.sh_ed, shares.sh_tr, shares.sh_on, shares.sh_pi, shares.sh_eg,
+    completes.completeness, completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05,
+    completes.cm06, completes.cm07, completes.cm08, completes.cm09, completes.cm10
+    FROM
+    (
+      select tos.sso SSO, 
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1) sh_eh,
+      DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1) sh_ca,
+      DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1) sh_wm,
+      DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1) sh_ip,
+      DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1) sh_cs,
+      DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1) sh_lp,
+      DECODE (tos.education, NULL, 0, 'N', 0, 1) sh_ed,
+      DECODE (tos.training, NULL, 0, 'N', 0, 1) sh_tr,
+      DECODE (tos.online_networks, NULL, 0, 'N', 0, 1) sh_on,
+      DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1) sh_pi,
+      DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1) sh_eg,
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+      -- + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+      AS SHARING_SCORE,
+      NVL(tost.trcount, 0) TRC
+      from t_optin_sharing tos
+      left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+    ) SHARES,
+    (
+      select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+      from
+      (
+      select sso, count(trcat_program_Type) trtypes from
+        (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+        group by sso
+        ) trngs,
+        (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+      where trngs.sso = tcerts.sso(+)
+    ) SHAREABLE,
+    (
+      select ee.sso "SSO", 
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end as cm01,
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end as cm06,
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end as cm02,
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm03,
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm04,
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end as cm05,
+      case when edu.edu_count >= 1 THEN 1 else 0 end as cm07,
+      case when lang.language_count >= 1 THEN 1 else 0 end as cm08,
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end as cm09,
+    --case when nw.network_count >= 1 THEN 1 else 0 end as cm10,
+      case when tee.expertise_count >= 1 THEN 1 else 0 end as cm10,
+      (
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end  +
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end +
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+      case when edu.edu_count >= 1 THEN 1 else 0 end +
+      case when lang.language_count >= 1 THEN 1 else 0 end +
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+      --case when nw.network_count >= 1 THEN 1 else 0 end
+      case when tee.expertise_count >= 1 THEN 1 else 0 end
+      ) / 10 as COMPLETENESS
+      from t_employee ee
+      left join t_employee_resume er on (ee.sso = er.sso)
+      left join t_employee_history eh on (ee.sso = eh.sso and eh.curr_job_flag = 'Y')
+      left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (ee.sso = edu.sso)
+      left join (
+      select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+      and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+      group by sso
+      ) eh2 on (ee.sso = eh2.sso)
+      left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (ee.sso = lang.sso)
+      --left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (ee.sso = nw.sso)
+      left join (select sso, count(sso) as expertise_count from t_employee_expertise group by sso) tee on (ee.sso = tee.sso)
+    ) COMPLETES,
+    (
+        select sso,
+        decode (
+        band, 
+        'SEB', 'Exec',
+        'LTB', 'Hourly',
+        'PB', 'Prof',
+        'VP', 'Exec',
+        'SPB', 'Prof',
+        'SVP', 'Exec',
+        'HRLY', 'Hourly',
+        'EB', 'Exec',
+        'No Source Data', 'Unknown',
+        'OTHSAL', 'Hourly',
+        'LPB', 'Prof',
+        'EO', 'Exec',
+        'Unknown') as Band, Region, IFG, Ffunction
+        from t_hr_population 
+    ) THP,    
+    T_EMPLOYEE E    
+    WHERE E.SSO = SHARES.SSO
+    AND E.SSO = THP.SSO
+    AND E.SSO = COMPLETES.SSO
+    AND SHARES.SSO = SHAREABLE.SSO(+)
+    --AND SHARES.SSO = '212361328'
+;
+-----------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------
+-- SPECIAL QUERY FOR XLP EMPLOYEES for Jen Esch (Apr 11, 2017)
+-----------------------------------------------------------------------------------------------------------------
+    SELECT SHARES.SSO, 
+    e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", 
+    e.emp_reporting_ifg "BUSINESS",
+    thp.REGION, thp.BAND,
+    round(shares.sharing_score*100/11,2),
+    --ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED,
+    --shares.sharing_score, shares.trc, shareable.total_shareable,
+    --shares.sh_eh, shares.sh_ca, shares.sh_wm, shares.sh_ip, shares.sh_cs, shares.sh_lp, shares.sh_ed, shares.sh_tr, shares.sh_on, shares.sh_pi, shares.sh_eg,    
+    completes.completeness*100 
+    --completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05, completes.cm06, completes.cm07, completes.cm08, completes.cm09, completes.cm10
+    FROM
+    (
+      select tos.sso SSO, 
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1) sh_eh,
+      DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1) sh_ca,
+      DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1) sh_wm,
+      DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1) sh_ip,
+      DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1) sh_cs,
+      DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1) sh_lp,
+      DECODE (tos.education, NULL, 0, 'N', 0, 1) sh_ed,
+      DECODE (tos.training, NULL, 0, 'N', 0, 1) sh_tr,
+      DECODE (tos.online_networks, NULL, 0, 'N', 0, 1) sh_on,
+      DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1) sh_pi,
+      DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1) sh_eg,
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+      AS SHARING_SCORE,
+      NVL(tost.trcount, 0) TRC
+      from t_optin_sharing tos
+      left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+    ) SHARES,
+    (
+      select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+      from
+      (
+      select sso, count(trcat_program_Type) trtypes from
+        (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+        group by sso
+        ) trngs,
+        (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+      where trngs.sso = tcerts.sso(+)
+    ) SHAREABLE,
+    (
+      select ee.sso "SSO", 
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end as cm01,
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end as cm06,
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end as cm02,
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm03,
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm04,
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end as cm05,
+      case when edu.edu_count >= 1 THEN 1 else 0 end as cm07,
+      case when lang.language_count >= 1 THEN 1 else 0 end as cm08,
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end as cm09,
+      case when nw.network_count >= 1 THEN 1 else 0 end as cm10,
+      (
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end  +
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end +
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+      case when edu.edu_count >= 1 THEN 1 else 0 end +
+      case when lang.language_count >= 1 THEN 1 else 0 end +
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+      case when nw.network_count >= 1 THEN 1 else 0 end
+      ) / 10 as COMPLETENESS
+      from t_employee ee
+      left join t_employee_resume er on (ee.sso = er.sso)
+      left join t_employee_history eh on (ee.sso = eh.sso and eh.curr_job_flag = 'Y')
+      left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (ee.sso = edu.sso)
+      left join (
+      select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+      and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+      group by sso
+      ) eh2 on (ee.sso = eh2.sso)
+      left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (ee.sso = lang.sso)
+      left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (ee.sso = nw.sso)
+    ) COMPLETES,
+    (
+        select sso,
+        decode (
+        band, 
+        'SEB', 'Exec',
+        'LTB', 'Hourly',
+        'PB', 'Prof',
+        'VP', 'Exec',
+        'SPB', 'Prof',
+        'SVP', 'Exec',
+        'HRLY', 'Hourly',
+        'EB', 'Exec',
+        'No Source Data', 'Unknown',
+        'OTHSAL', 'Hourly',
+        'LPB', 'Prof',
+        'EO', 'Exec',
+        'Unknown') as Band, Region 
+        from t_hr_population 
+    ) THP,    
+    T_EMPLOYEE E
+    WHERE E.SSO = SHARES.SSO
+    AND E.SSO = THP.SSO
+    AND E.SSO = COMPLETES.SSO
+    AND SHARES.SSO = SHAREABLE.SSO(+)
+    AND SHARES.SSO IN (select SSO from t_employee_program where prg_id = 3 and prg_Status = 'In Progress')
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- QUERY FOR NUHA - Average level of Profile completeness for EB+ employees
+-----------------------------------------------------------------------------------------------------------------
+    SELECT SHARES.SSO, 
+    --e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", 
+    --e.emp_reporting_ifg "BUSINESS",
+    --thp.REGION, 
+    thp.BAND,
+    -- round(shares.sharing_score*100/11,2),
+    --ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED,
+    --shares.sharing_score, shares.trc, shareable.total_shareable,
+    --shares.sh_eh, shares.sh_ca, shares.sh_wm, shares.sh_ip, shares.sh_cs, shares.sh_lp, shares.sh_ed, shares.sh_tr, shares.sh_on, shares.sh_pi, shares.sh_eg,    
+    completes.completeness*100 C
+    --completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05, completes.cm06, completes.cm07, completes.cm08, completes.cm09, completes.cm10
+    FROM
+    (
+      select tos.sso SSO, 
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1) sh_eh,
+      DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1) sh_ca,
+      DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1) sh_wm,
+      DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1) sh_ip,
+      DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1) sh_cs,
+      DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1) sh_lp,
+      DECODE (tos.education, NULL, 0, 'N', 0, 1) sh_ed,
+      DECODE (tos.training, NULL, 0, 'N', 0, 1) sh_tr,
+      DECODE (tos.online_networks, NULL, 0, 'N', 0, 1) sh_on,
+      DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1) sh_pi,
+      DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1) sh_eg,
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+      AS SHARING_SCORE,
+      NVL(tost.trcount, 0) TRC
+      from t_optin_sharing tos
+      left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+    ) SHARES,
+    (
+      select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+      from
+      (
+      select sso, count(trcat_program_Type) trtypes from
+        (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+        group by sso
+        ) trngs,
+        (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+      where trngs.sso = tcerts.sso(+)
+    ) SHAREABLE,
+    (
+      select ee.sso "SSO", 
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end as cm01,
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end as cm06,
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end as cm02,
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm03,
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm04,
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end as cm05,
+      case when edu.edu_count >= 1 THEN 1 else 0 end as cm07,
+      case when lang.language_count >= 1 THEN 1 else 0 end as cm08,
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end as cm09,
+      case when nw.network_count >= 1 THEN 1 else 0 end as cm10,
+      (
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end  +
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end +
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+      case when edu.edu_count >= 1 THEN 1 else 0 end +
+      case when lang.language_count >= 1 THEN 1 else 0 end +
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+      case when nw.network_count >= 1 THEN 1 else 0 end
+      ) / 10 as COMPLETENESS
+      from t_employee ee
+      left join t_employee_resume er on (ee.sso = er.sso)
+      left join t_employee_history eh on (ee.sso = eh.sso and eh.curr_job_flag = 'Y')
+      left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (ee.sso = edu.sso)
+      left join (
+      select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+      and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+      group by sso
+      ) eh2 on (ee.sso = eh2.sso)
+      left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (ee.sso = lang.sso)
+      left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (ee.sso = nw.sso)
+    ) COMPLETES,
+    (
+        select sso, band, Region from t_hr_population 
+    ) THP,    
+    T_EMPLOYEE E
+    WHERE E.SSO = SHARES.SSO
+    AND E.SSO = THP.SSO
+    AND E.SSO = COMPLETES.SSO
+    AND SHARES.SSO = SHAREABLE.SSO(+)
+    --AND SHARES.SSO IN (select SSO from t_employee_program where prg_id = 3 and prg_Status = 'In Progress')
+;
+-----------------------------------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------
+-- QUERY for Diana Penque / Mounica Karlapudi
+-----------------------------------------------------------------------------------------------------------------
+-- Job History Numbers
+select count(*)
+from
+(
+select * from (
+  select distinct sso, curr_job_flag, sum(length(emh_exp_desc)) as count from t_employee_history 
+  where sso in (
+    select sso from t_hr_population where band in ('EB','SEB','VP','SVP','EO')
+  )
+  -- and curr_job_flag <> 'Y'
+  group by sso, curr_job_flag
+)
+pivot (max(count) for curr_job_flag in ('Y' as Y,'N' as N))
+)
+where Y is null and N is not null
+;
+--5564
+-- BOTH PRESENT: 2255
+-- Y present, N null: 136
+-- Y null, N present: 1024
+-- BOTH NULL: 2149
+
+
+-- Education Numbers
+select count(*) from (
+select 
+distinct e.sso -- wa.wa_band, 
+-- re.* 
+from t_employee e
+inner join t_work_assignment wa on (e.sso = wa.sso and wa.wa_end_date > sysdate and wa.wa_start_date <= sysdate)
+inner join T_RESUME_EDUCATION re on (e.sso = re.sso)
+where wa.wa_band in ('EB','SEB','VP','SVP','EO')
+)
+;
+--5046
+
+-- Professional Summary
+select count(sso) from t_employee_resume
+where sso in (select sso from t_hr_population where band in ('EB','SEB','VP','SVP','EO'))
+and professional_summary is not null
+;
+--563
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- QUERY FOR NEW Mentoring Program - Profile Completeness for GE Transportation - Prabandhana
+-----------------------------------------------------------------------------------------------------------------
+    SELECT E.SSO, 
+    e.emp_first_name || ' ' || e.emp_last_name "FULLNAME",
+    thp.title,
+    e.emp_reporting_ifg "BUSINESS",
+    thp.COUNTRY,
+    e.emp_payroll_country_name "PAYROLL COUNTRY",
+    thp.REGION, 
+    thp.BAND,
+    thp.FFUNCTION,
+    mento.mentor_flag "MENTOR",
+    mento.mentee_flag "MENTEE",
+    e.emp_manager "MANAGER SSO",
+    em.emp_first_name || ' ' || em.emp_last_name "MANAGER NAME",
+    completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05, completes.cm06, completes.cm07, completes.cm08,
+    completes.cm09, completes.cm10, 
+    completes.completeness*100 C
+    FROM
+   (
+      select ee.sso "SSO", 
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end as cm01,
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end as cm06,
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end as cm02,
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm03,
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm04,
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end as cm05,
+      case when edu.edu_count >= 1 THEN 1 else 0 end as cm07,
+      case when lang.language_count >= 1 THEN 1 else 0 end as cm08,
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end as cm09,
+      case when nw.network_count >= 1 THEN 1 else 0 end as cm10,
+      (
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end  +
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end +
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+      case when edu.edu_count >= 1 THEN 1 else 0 end +
+      case when lang.language_count >= 1 THEN 1 else 0 end +
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+      case when nw.network_count >= 1 THEN 1 else 0 end
+      ) / 10 as COMPLETENESS
+      from t_employee ee
+      left join t_employee_resume er on (ee.sso = er.sso)
+      left join t_employee_history eh on (ee.sso = eh.sso and eh.curr_job_flag = 'Y')
+      left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (ee.sso = edu.sso)
+      left join (
+      select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+      and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+      group by sso
+      ) eh2 on (ee.sso = eh2.sso)
+      left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (ee.sso = lang.sso)
+      left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (ee.sso = nw.sso)
+    ) COMPLETES,
+    (
+        select sso, title, band, Region, ffunction, country from t_hr_population 
+    ) THP,
+    (
+        select te.sso, tm.mentor_flag, tm.mentee_flag from t_employee te left join T_CONNECT_MENTORING tm on (te.sso = tm.sso)
+    ) MENTO,
+    T_EMPLOYEE E
+    left join T_EMPLOYEE EM on (E.emp_manager = EM.sso)
+    WHERE E.SSO = THP.SSO
+    AND E.SSO = COMPLETES.SSO
+    AND E.SSO = MENTO.sso
+    AND E.EMP_REPORTING_IFG = 'GE Transportation'
+    AND THP.FFUNCTION = 'Engineering/Technology'
+    AND (THP.COUNTRY = 'IN' OR thp.REGION IN ('Africa', 'ANZ', 'Canada', 'Greater China', 'Latin America', 'Russia/CIS', 'United States'))
+    --AND E.SSO = SHARES.SSO
+    --AND SHARES.SSO = SHAREABLE.SSO(+)
+    --AND SHARES.SSO IN (select SSO from t_employee_program where prg_id = 3 and prg_Status = 'In Progress')
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- QUERY FOR OLD Mentoring Program - Profile Completeness for GE Transportation - Prabandhana
+-----------------------------------------------------------------------------------------------------------------
+    SELECT E.SSO, 
+    e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", 
+    e.emp_reporting_ifg "BUSINESS",
+    thp.COUNTRY,
+    e.emp_payroll_country_name "PAYROLL COUNTRY",
+    thp.REGION, 
+    thp.BAND,
+    thp.FFUNCTION,
+    mento.mentor_flag "MENTOR",
+    mento.mentee_flag "MENTEE",
+    e.emp_manager "MANAGER SSO",
+    em.emp_first_name || ' ' || em.emp_last_name "MANAGER NAME",
+    -- round(shares.sharing_score*100/11,2),
+    --ROUND (DECODE (SHARES.TRC, 0, SHARES.SHARING_SCORE/10, (SHARES.SHARING_SCORE + SHARES.TRC) / (NVL(SHAREABLE.TOTAL_SHAREABLE, 0) + 10)), 2) PCNT_SHARED,
+    --shares.sharing_score, shares.trc, shareable.total_shareable,
+    --shares.sh_eh, shares.sh_ca, shares.sh_wm, shares.sh_ip, shares.sh_cs, shares.sh_lp, shares.sh_ed, shares.sh_tr, shares.sh_on, shares.sh_pi, shares.sh_eg,    
+    completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05, completes.cm06, completes.cm07, completes.cm08,
+    completes.cm09, completes.cm10, 
+    completes.completeness*100 C
+    --completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05, completes.cm06, completes.cm07, completes.cm08, completes.cm09, completes.cm10
+    FROM
+    /*
+    (
+      select tos.sso SSO, 
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1) sh_eh,
+      DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1) sh_ca,
+      DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1) sh_wm,
+      DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1) sh_ip,
+      DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1) sh_cs,
+      DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1) sh_lp,
+      DECODE (tos.education, NULL, 0, 'N', 0, 1) sh_ed,
+      DECODE (tos.training, NULL, 0, 'N', 0, 1) sh_tr,
+      DECODE (tos.online_networks, NULL, 0, 'N', 0, 1) sh_on,
+      DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1) sh_pi,
+      DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1) sh_eg,
+      DECODE (tos.emp_history, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.career_aspirations, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.work_mobility, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.initiatives_projects, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.customers_suppliers, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.language_proficiency, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.education, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.training, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.online_networks, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.prof_personal_interests, NULL, 0, 'N', 0, 1)
+      + DECODE (tos.external_group_affiliations, NULL, 0, 'N', 0, 1)
+      AS SHARING_SCORE,
+      NVL(tost.trcount, 0) TRC
+      from t_optin_sharing tos
+      left join (select sso, count(sso) trcount from t_optin_sharing_Training group by sso) tost on (tos.sso = tost.sso)
+    ) SHARES,
+    (
+      select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+      from
+      (
+      select sso, count(trcat_program_Type) trtypes from
+        (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+        group by sso
+        ) trngs,
+        (select sso, max(year) yr from t_professional_certification group by sso) tcerts 
+      where trngs.sso = tcerts.sso(+)
+    ) SHAREABLE,
+    */
+    (
+      select ee.sso "SSO", 
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end as cm01,
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end as cm06,
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end as cm02,
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm03,
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm04,
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end as cm05,
+      case when edu.edu_count >= 1 THEN 1 else 0 end as cm07,
+      case when lang.language_count >= 1 THEN 1 else 0 end as cm08,
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end as cm09,
+      case when nw.network_count >= 1 THEN 1 else 0 end as cm10,
+      (
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end  +
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end +
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+      case when edu.edu_count >= 1 THEN 1 else 0 end +
+      case when lang.language_count >= 1 THEN 1 else 0 end +
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+      case when nw.network_count >= 1 THEN 1 else 0 end
+      ) / 10 as COMPLETENESS
+      from t_employee ee
+      left join t_employee_resume er on (ee.sso = er.sso)
+      left join t_employee_history eh on (ee.sso = eh.sso and eh.curr_job_flag = 'Y')
+      left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (ee.sso = edu.sso)
+      left join (
+      select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+      and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+      group by sso
+      ) eh2 on (ee.sso = eh2.sso)
+      left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (ee.sso = lang.sso)
+      left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (ee.sso = nw.sso)
+    ) COMPLETES,
+    (
+        select sso, band, Region, ffunction, country from t_hr_population 
+    ) THP,
+    (
+        select te.sso, tm.mentor_flag, tm.mentee_flag from t_employee te left join T_MENTORING tm on (te.sso = tm.sso)
+    ) MENTO,
+    T_EMPLOYEE E
+    left join T_EMPLOYEE EM on (E.emp_manager = EM.sso)
+    WHERE E.SSO = THP.SSO
+    AND E.SSO = COMPLETES.SSO
+    AND E.SSO = MENTO.sso
+    AND E.EMP_REPORTING_IFG = 'GE Transportation'
+    AND THP.FFUNCTION = 'Engineering/Technology'
+    AND (THP.COUNTRY = 'IN' OR thp.REGION IN ('Africa', 'ANZ', 'Canada', 'Greater China', 'Latin America', 'Russia/CIS', 'United States'))
+    --AND E.SSO = SHARES.SSO
+    --AND SHARES.SSO = SHAREABLE.SSO(+)
+    --AND SHARES.SSO IN (select SSO from t_employee_program where prg_id = 3 and prg_Status = 'In Progress')
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- NEW METRICS REQUEST FROM JAMES GALLMAN for PAUL DAVIES - 30th MAY 2017
+-----------------------------------------------------------------------------------------------------------------
+
+SELECT EE.SSO, 
+    ee.emp_first_name || ' ' || ee.emp_last_name "FULLNAME", 
+    ee.emp_reporting_ifg "BUSINESS",
+    thp.COUNTRY,
+    ee.emp_payroll_country_name "PAYROLL COUNTRY",
+    thp.REGION, 
+    thp.BAND,
+    thp.FFUNCTION,
+    nvl(er.ps_flag, 0) "FLAG_Professional_Summary", 
+    nvl(eh.eh_flag, 0) "FLAG_Employment_History", 
+    nvl(er2.cg_flag, 0) "FLAG_Career_Aspirations"
+    from t_employee ee
+    left join (select sso, 1 ps_flag from t_employee_resume where length(professional_summary) > 0) er on (ee.sso = er.sso)
+    left join (select distinct sso, 1 eh_flag from t_employee_history where emh_update_date > '30-SEP-2016' and emh_update_date > emh_insert_date) eh on (ee.sso = eh.sso)
+    left join (select sso, 1 cg_flag from t_employee_resume where length(career_goal_combined) > 0) er2 on (ee.sso = er2.sso),
+    (
+      select sso, band, Region, ffunction, country from t_hr_population
+    ) THP 
+    WHERE ee.sso = thp.sso 
+    and thp.band in ('SEB','PB','VP','SPB','SVP','EB','LPB','EO')
+    and nvl(er.ps_flag, 0) + nvl(eh.eh_flag, 0) + nvl(er2.cg_flag, 0) > 0
+    --and ee.sso = '212361328'
+;
+-- OCT-01-2016
+-----------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------
+-- ODDBALL Queries
+-----------------------------------------------------------------------------------------------------------------
+select * from
+t_employee_resume
+where sso = '212361328';
+
+select * from t_employee_history
+where sso = '212361328';
+
+select * from t_employee where sso = '212548420';
+
+select distinct band from t_hr_population where sso = '212548420';
+
+      select trngs.sso SSO, trngs.trtypes + decode(tcerts.yr, null, 0, 1) TOTAL_SHAREABLE
+      from
+      (
+        select sso, count(trcat_program_Type) trtypes from
+        (select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+        group by sso
+      ) trngs,
+      (
+        select sso, max(year) yr from t_professional_certification group by sso
+      ) tcerts 
+      where trngs.sso = tcerts.sso(+)
+      and tcerts.sso = '212037020';
+
+select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)
+and et.sso = '212037020';     
+
+select sso, count(trcat_program_Type) trtypes from
+(select distinct et.sso, trcat_program_type from t_employee_training et inner join t_training_category tc on (tc.trcat_item_id = et.trn_id)) 
+where sso = '212037020'
+group by sso
+;
+
+select sso, max(year) yr from t_professional_certification
+where sso = '212037020'
+group by sso;
+
+select * from t_employee_training
+where sso = '212037020';
+
+select * from t_optin_sharing_training
+where sso = '212037020';
+
+select * from t_resume_education
+where sso = '200020966';
+-----------------------------------------------------------------------------------------------------------------
+
+-- Deepak
+-----------------------------------------------------------------------------------------------------------------
+-- To get the completeness data for all Baker Huges and GE Oil & Gas business
+-----------------------------------------------------------------------------------------------------------------
+
+    SELECT rownum, 
+    COMPLETES.SSO, 
+    e.emp_first_name || ' ' || e.emp_last_name "FULLNAME", 
+    ORG.ORG_NAME "BUSINESS", 
+    thp.REGION, thp.BAND,
+    completes.completeness, completes.cm01, completes.cm02, completes.cm03, completes.cm04, completes.cm05,
+    completes.cm06, completes.cm07, completes.cm08, completes.cm09, completes.cm10
+    FROM
+    (
+      select ee.sso "SSO", 
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end as cm01,
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end as cm06,
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end as cm02,
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm03,
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end as cm04,
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end as cm05,
+      case when edu.edu_count >= 1 THEN 1 else 0 end as cm07,
+      case when lang.language_count >= 1 THEN 1 else 0 end as cm08,
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end as cm09,
+      case when nw.network_count >= 1 THEN 1 else 0 end as cm10,
+      (
+      case when length(er.professional_summary) >= 10 THEN 1 else 0 end +
+      case when er.mobility_relocatewithin IS NULL AND er.relocate_outside IS NULL THEN 0 else 1 end +
+      case when length(eh.emh_exp_desc) >= 10 THEN 1 else 0 end  +
+      case when eh2.historycount >= 1 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end  +
+      case when eh2.historycharcount >= 10 THEN 1 when ee.emp_ge_service_years < 3 THEN 1 else 0 end +
+      case when length(er.career_goal_combined) >= 10 THEN 1 else 0 end +
+      case when edu.edu_count >= 1 THEN 1 else 0 end +
+      case when lang.language_count >= 1 THEN 1 else 0 end +
+      case when length(er.employee_interests) >= 10 THEN 1 else 0 end +
+      case when nw.network_count >= 1 THEN 1 else 0 end
+      ) / 10 as COMPLETENESS
+      from t_employee ee
+      left join t_employee_resume er on (ee.sso = er.sso)
+      left join t_employee_history eh on (ee.sso = eh.sso and eh.curr_job_flag = 'Y')
+      left join (select sso, count(sso) as edu_count from t_resume_education group by sso) edu on (ee.sso = edu.sso)
+      left join (
+      select sso, count(sso) as historycount, sum(length(emh_exp_desc)) as historycharcount from t_employee_history eh where emh_business_card is not null and emh_ge_business is not null
+      and (eh.curr_job_flag <> 'Y' or eh.curr_job_flag is null)
+      group by sso
+      ) eh2 on (ee.sso = eh2.sso)
+      left join (select sso, count(emp_language) as language_count from t_language_proficiency group by sso) lang on (ee.sso = lang.sso)
+      left join (select sso, count(name) as network_count from t_online_networks where url is not null group by sso) nw on (ee.sso = nw.sso)
+    ) COMPLETES,
+    (
+        select sso,
+        decode (
+        band, 
+        'SEB', 'Exec',
+        'LTB', 'Hourly',
+        'PB', 'Prof',
+        'VP', 'Exec',
+        'SPB', 'Prof',
+        'SVP', 'Exec',
+        'HRLY', 'Hourly',
+        'EB', 'Exec',
+        'No Source Data', 'Unknown',
+        'OTHSAL', 'Hourly',
+        'LPB', 'Prof',
+        'EO', 'Exec',
+        'Unknown') as Band, Region 
+        from t_hr_population 
+    ) THP,    
+    T_EMPLOYEE E,
+    T_WORK_ASSIGNMENT WA,
+    T_ORGANIZATION ORG
+    WHERE E.SSO = THP.SSO
+    AND E.SSO = WA.SSO
+    AND E.SSO = COMPLETES.SSO
+    AND WA.WA_IFG = ORG.ORG_ID
+    AND WA.WA_CURRENT_JOB_FLAG = 'Y'
+    AND (ORG.ORG_NAME = 'GE Oil & Gas' OR ORG.ORG_NAME = 'Baker Hughes GE')
+;
+-----------------------------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------------------------------
+--for Madhavi's query - IFG = Aviation, Function = Digital Technology, Band = LPB or SPB, Location/Country = USA, Work History data = blank/missing.
+
+select ee.sso from HRPDBA01.T_EMPLOYEE ee inner join HRPDBA01.T_WORK_ASSIGNMENT wa on ee.sso = wa.sso and wa.WA_CURRENT_JOB_FLAG = 'Y' 
+  and wa.WA_IFG = (1178320)
+  and wa.WA_JOB_FUNCTION = (41)
+  and (wa.WA_BAND = 'LPB' or wa.WA_BAND = 'SPB')
+  and (wa.WA_COUNTRY = 'US');
+  
+select distinct sso from HRPDBA01.T_EMPLOYEE_HISTORY where sso in ( select ee.sso from HRPDBA01.T_EMPLOYEE ee inner join HRPDBA01.T_WORK_ASSIGNMENT wa on ee.sso = wa.sso and wa.WA_CURRENT_JOB_FLAG = 'Y' 
+  and wa.WA_IFG = (1178320)
+  and wa.WA_JOB_FUNCTION = (41)
+  and (wa.WA_BAND = 'LPB' or wa.WA_BAND = 'SPB')
+  and (wa.WA_COUNTRY = 'US'))
+  and CURR_JOB_FLAG = 'N'; 
+
+--------------------------------------------------------------------------------------------------------------------
